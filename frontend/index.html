@@ -64,6 +64,7 @@
     font-size: 13px;
     cursor: pointer;
     transition: transform 0.15s, box-shadow 0.15s;
+    display: none;
   }
   .unlock-btn:hover { transform: scale(1.04); box-shadow: 0 4px 20px rgba(212,175,55,0.4); }
 
@@ -293,37 +294,6 @@
   .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
   @keyframes bounce { 0%,80%,100%{transform:scale(0.6);opacity:0.4} 40%{transform:scale(1);opacity:1} }
 
-  /* Ad Modal */
-  .ad-modal {
-    text-align: center; padding: 48px 36px;
-  }
-  .ad-icon { font-size: 56px; margin-bottom: 16px; }
-  .ad-title { font-family: 'Bebas Neue', sans-serif; font-size: 32px; letter-spacing: 2px; color: var(--gold); margin-bottom: 10px; }
-  .ad-desc { color: rgba(245,245,240,0.55); font-size: 14px; margin-bottom: 32px; line-height: 1.6; }
-  .ad-countdown {
-    width: 80px; height: 80px; border-radius: 50%;
-    border: 2px solid var(--gold); margin: 0 auto 24px;
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'Bebas Neue', sans-serif; font-size: 32px; color: var(--gold);
-    position: relative;
-  }
-  .ad-progress {
-    position: absolute; inset: -2px; border-radius: 50%;
-    background: conic-gradient(var(--gold) var(--p, 0%), transparent 0%);
-    transition: --p 1s linear;
-  }
-  .watch-ad-btn {
-    background: linear-gradient(135deg, var(--gold), #8a6e10);
-    color: #050e07; border: none;
-    padding: 14px 36px; border-radius: 25px;
-    font-family: 'Noto Sans SC', sans-serif; font-weight: 700;
-    font-size: 15px; cursor: pointer;
-    transition: transform 0.15s, box-shadow 0.15s;
-    letter-spacing: 1px;
-  }
-  .watch-ad-btn:hover { transform: scale(1.03); box-shadow: 0 6px 24px rgba(212,175,55,0.4); }
-  .watch-ad-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
-
   .tag { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 8px; margin-left: 6px; vertical-align: middle; }
   .tag-hot { background: rgba(231,76,60,0.2); color: #e74c3c; border: 0.5px solid rgba(231,76,60,0.3); }
   .tag-new { background: rgba(46,204,113,0.2); color: #2ecc71; border: 0.5px solid rgba(46,204,113,0.3); }
@@ -347,7 +317,7 @@
     <a href="#">球队分析</a>
     <a href="#">排行榜</a>
   </nav>
-  <button class="unlock-btn" onclick="showAdModal()">🏆 解锁全部预测</button>
+  <button class="unlock-btn">🏆 解锁全部预测</button>
 </header>
 
 <section class="hero">
@@ -397,22 +367,6 @@
   <div class="modal">
     <button class="modal-close" onclick="closeModal('analysis-modal')">×</button>
     <div id="modal-content"></div>
-  </div>
-</div>
-
-<!-- Ad Unlock Modal -->
-<div class="modal-overlay" id="ad-modal">
-  <div class="modal ad-modal">
-    <button class="modal-close" onclick="closeModal('ad-modal')">×</button>
-    <div class="ad-icon">📺</div>
-    <div class="ad-title">解锁全部预测</div>
-    <div class="ad-desc">观看一段短视频广告，即可解锁今日全部赛事的 AI 深度分析预测，包括实时新闻情报整合</div>
-    <div class="ad-countdown" id="ad-timer">
-      <div class="ad-progress" id="ad-progress"></div>
-      <span id="ad-count">5</span>
-    </div>
-    <button class="watch-ad-btn" id="watch-btn" onclick="watchAd()">▶ 观看广告解锁 (5秒)</button>
-    <p style="margin-top:16px;font-size:12px;color:rgba(245,245,240,0.3)">广告收入支持我们持续更新数据模型</p>
   </div>
 </div>
 
