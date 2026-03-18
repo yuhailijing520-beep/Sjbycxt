@@ -1,6 +1,7 @@
 # ⚽ WorldCup Oracle — 世界杯预测系统
 
 融合 1930–2026 历史赛事大数据 + AI 实时分析的世界杯预测平台。
+<img width="2088" height="1332" alt="image" src="https://github.com/user-attachments/assets/3b77fd54-3627-4619-bcf1-c280cf317407" />
 
 ## 技术架构
 
