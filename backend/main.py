@@ -2,9 +2,9 @@
 世界杯预测系统 — FastAPI 后端
 支持：历史数据查询、AI预测（Google Gemini / OpenAI）、新闻分析
 """
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from pydantic import BaseModel
 from typing import Optional
 import httpx
@@ -14,6 +14,9 @@ import redis
 import hashlib
 import asyncio
 from datetime import datetime, timedelta
+
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
+CONFIG_PATH = os.getenv("MODEL_CONFIG_PATH", "model_config.json")
 
 app = FastAPI(title="WorldCup Oracle API", version="1.0.0")
 
@@ -34,6 +37,35 @@ OPENAI_MODEL    = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 NEWS_API_KEY   = os.getenv("NEWS_API_KEY", "")
 REDIS_URL      = os.getenv("REDIS_URL", "redis://localhost:6379")
 AI_PROVIDER    = os.getenv("AI_PROVIDER", "gemini")  # gemini | openai
+
+
+class ModelConfig(BaseModel):
+    ai_provider: str = AI_PROVIDER
+    gemini_api_key: str = GEMINI_API_KEY
+    gemini_model: str = GEMINI_MODEL
+    openai_api_key: str = OPENAI_API_KEY
+    openai_base_url: str = OPENAI_BASE_URL
+    openai_model: str = OPENAI_MODEL
+    news_api_key: str = NEWS_API_KEY
+
+
+def load_config() -> ModelConfig:
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return ModelConfig(**data)
+        except Exception:
+            pass
+    return ModelConfig()
+
+
+def save_config(cfg: ModelConfig) -> None:
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg.dict(), f, ensure_ascii=False, indent=2)
+
+
+CURRENT_CONFIG = load_config()
 
 try:
     r = redis.from_url(REDIS_URL, decode_responses=True)
@@ -76,12 +108,12 @@ def get_historical(team_a: str, team_b: str) -> dict:
 
 # ─── 新闻抓取 ─────────────────────────────────────────────
 async def fetch_news(team_a: str, team_b: str) -> list[str]:
-    if not NEWS_API_KEY:
+    if not CURRENT_CONFIG.news_api_key:
         return ["无法加载最新新闻（未配置 News API Key）"]
     url = (f"https://newsapi.org/v2/everything?"
            f"q={team_a}+{team_b}+football&"
            f"language=zh&sortBy=publishedAt&pageSize=5&"
-           f"apiKey={NEWS_API_KEY}")
+           f"apiKey={CURRENT_CONFIG.news_api_key}")
     try:
         async with httpx.AsyncClient(timeout=8.0) as client:
             resp = await client.get(url)
@@ -92,7 +124,7 @@ async def fetch_news(team_a: str, team_b: str) -> list[str]:
 
 # ─── Gemini AI 预测 ───────────────────────────────────────
 async def predict_with_gemini(team_a: str, team_b: str, history: dict, news: list) -> dict:
-    if not GEMINI_API_KEY:
+    if not CURRENT_CONFIG.gemini_api_key:
         raise HTTPException(status_code=503, detail="Gemini API Key 未配置")
 
     prompt = f"""你是世界顶级足球数据分析师，专注世界杯赛事预测。
@@ -117,7 +149,7 @@ async def predict_with_gemini(team_a: str, team_b: str, history: dict, news: lis
 }}
 确保 win_a_pct + draw_pct + win_b_pct = 100"""
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{CURRENT_CONFIG.gemini_model}:generateContent?key={CURRENT_CONFIG.gemini_api_key}"
     payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -130,7 +162,7 @@ async def predict_with_gemini(team_a: str, team_b: str, history: dict, news: lis
 
 # ─── OpenAI AI 预测 ───────────────────────────────────────
 async def predict_with_openai(team_a: str, team_b: str, history: dict, news: list) -> dict:
-    if not OPENAI_API_KEY:
+    if not CURRENT_CONFIG.openai_api_key:
         raise HTTPException(status_code=503, detail="OpenAI API Key 未配置")
 
     prompt = f"""你是世界顶级足球数据分析师。分析以下比赛并给出预测。
@@ -144,9 +176,9 @@ async def predict_with_openai(team_a: str, team_b: str, history: dict, news: lis
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
-            f"{OPENAI_BASE_URL}/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}"},
-            json={"model": OPENAI_MODEL, "messages": [{"role": "user", "content": prompt}], "temperature": 0.3}
+            f"{CURRENT_CONFIG.openai_base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {CURRENT_CONFIG.openai_api_key}"},
+            json={"model": CURRENT_CONFIG.openai_model, "messages": [{"role": "user", "content": prompt}], "temperature": 0.3}
         )
         data = resp.json()
     raw = data["choices"][0]["message"]["content"].strip().lstrip("```json").rstrip("```").strip()
@@ -176,6 +208,7 @@ async def predict(req: PredictionRequest):
     news = await fetch_news(req.team_a, req.team_b) if req.include_news else []
 
     try:
+        provider = CURRENT_CONFIG.ai_provider
         if AI_PROVIDER == "openai":
             ai_result = await predict_with_openai(req.team_a, req.team_b, history, news)
         else:
@@ -232,3 +265,190 @@ async def get_teams():
         {"name": "Croatia", "cn": "克罗地亚", "flag": "🇭🇷", "rank": 8},
     ]
     return {"teams": teams, "total": len(teams)}
+
+
+def require_admin(password: str = Header(..., alias="X-Admin-Token")):
+    if password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid admin token")
+    return True
+
+
+@app.get("/api/admin/config", response_model=ModelConfig)
+async def get_model_config(_: bool = Depends(require_admin)):
+    return CURRENT_CONFIG
+
+
+class UpdateConfigRequest(BaseModel):
+    ai_provider: str
+    gemini_api_key: str | None = None
+    gemini_model: str | None = None
+    openai_api_key: str | None = None
+    openai_base_url: str | None = None
+    openai_model: str | None = None
+    news_api_key: str | None = None
+
+
+@app.post("/api/admin/config", response_model=ModelConfig)
+async def update_model_config(body: UpdateConfigRequest, _: bool = Depends(require_admin)):
+    global CURRENT_CONFIG
+    data = CURRENT_CONFIG.dict()
+    for field, value in body.dict(exclude_unset=True).items():
+        if value is not None:
+            data[field] = value
+    CURRENT_CONFIG = ModelConfig(**data)
+    save_config(CURRENT_CONFIG)
+    return CURRENT_CONFIG
+
+
+ADMIN_HTML = """
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>模型配置面板</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans SC",sans-serif; background:#0b1020; color:#f7f7ff; margin:0; padding:24px; }
+    .card { max-width:720px; margin:0 auto; background:#151a30; border-radius:12px; padding:24px 28px; box-shadow:0 18px 45px rgba(0,0,0,.55); border:1px solid rgba(255,255,255,.06); }
+    h1 { margin-top:0; font-size:22px; }
+    label { display:block; font-size:13px; margin-top:14px; margin-bottom:4px; opacity:.82; }
+    input, select { width:100%; padding:8px 10px; border-radius:6px; border:1px solid rgba(255,255,255,.14); background:#111524; color:#f7f7ff; font-size:13px; box-sizing:border-box; }
+    input:focus, select:focus { outline:none; border-color:#4f8df7; box-shadow:0 0 0 1px rgba(79,141,247,.45); }
+    .row { display:flex; gap:12px; }
+    .row > div { flex:1; }
+    button { margin-top:20px; padding:10px 18px; border-radius:999px; border:none; background:linear-gradient(135deg,#4f8df7,#27c4f5); color:#fff; font-weight:600; cursor:pointer; font-size:13px; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .tag { display:inline-block; font-size:11px; padding:2px 8px; border-radius:999px; background:rgba(79,141,247,.15); color:#9bbcff; margin-left:8px; vertical-align:middle; }
+    .hint { font-size:12px; opacity:.65; margin-top:4px; }
+    .status { margin-top:10px; font-size:12px; }
+    .status.ok { color:#38c793; }
+    .status.err { color:#ff6b81; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>模型配置面板 <span class="tag">后端管理</span></h1>
+    <p style="font-size:13px;opacity:.7;margin-bottom:14px;">通过此界面可以切换 Gemini / OpenAI / 自定义兼容接口，并更新对应的 Key、Base URL 与模型名。</p>
+
+    <label>管理口令（X-Admin-Token）</label>
+    <input id="adminToken" type="password" placeholder="默认：admin123，生产环境请在环境变量 ADMIN_PASSWORD 中修改" />
+
+    <label style="margin-top:18px;">AI 提供商</label>
+    <select id="aiProvider">
+      <option value="gemini">Gemini</option>
+      <option value="openai">OpenAI / 兼容接口</option>
+    </select>
+
+    <div class="row">
+      <div>
+        <label>Gemini API Key</label>
+        <input id="geminiApiKey" type="password" placeholder="可留空，使用环境变量 GEMINI_API_KEY" />
+      </div>
+      <div>
+        <label>Gemini 模型名</label>
+        <input id="geminiModel" type="text" placeholder="如：gemini-pro" />
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>OpenAI / 兼容接口 API Key</label>
+        <input id="openaiApiKey" type="password" placeholder="可留空，使用环境变量 OPENAI_API_KEY" />
+      </div>
+      <div>
+        <label>OpenAI 模型名</label>
+        <input id="openaiModel" type="text" placeholder="如：gpt-4o-mini 或自定义模型名" />
+      </div>
+    </div>
+
+    <label>OpenAI Base URL</label>
+    <input id="openaiBaseUrl" type="text" placeholder="如：https://api.openai.com/v1 或 http://20230620.xyz:3030/v1" />
+    <div class="hint">自定义兼容接口时请务必包含 /v1 前缀。</div>
+
+    <label>News API Key</label>
+    <input id="newsApiKey" type="password" placeholder="用于实时新闻分析，可留空关闭新闻功能" />
+
+    <button id="saveBtn" onclick="saveConfig()">保存配置</button>
+    <div id="status" class="status"></div>
+  </div>
+
+  <script>
+    async function loadConfig() {
+      const token = document.getElementById('adminToken').value.trim();
+      if (!token) return;
+      const res = await fetch('/api/admin/config', {
+        headers: { 'X-Admin-Token': token }
+      });
+      const statusEl = document.getElementById('status');
+      if (!res.ok) {
+        statusEl.textContent = '加载失败：请确认管理口令是否正确';
+        statusEl.className = 'status err';
+        return;
+      }
+      const data = await res.json();
+      document.getElementById('aiProvider').value = data.ai_provider;
+      document.getElementById('geminiApiKey').value = data.gemini_api_key || '';
+      document.getElementById('geminiModel').value = data.gemini_model || '';
+      document.getElementById('openaiApiKey').value = data.openai_api_key || '';
+      document.getElementById('openaiBaseUrl').value = data.openai_base_url || '';
+      document.getElementById('openaiModel').value = data.openai_model || '';
+      document.getElementById('newsApiKey').value = data.news_api_key || '';
+      statusEl.textContent = '配置已加载';
+      statusEl.className = 'status ok';
+    }
+
+    async function saveConfig() {
+      const token = document.getElementById('adminToken').value.trim();
+      if (!token) {
+        alert('请先填写管理口令（X-Admin-Token）');
+        return;
+      }
+      const body = {
+        ai_provider: document.getElementById('aiProvider').value,
+        gemini_api_key: document.getElementById('geminiApiKey').value || null,
+        gemini_model: document.getElementById('geminiModel').value || null,
+        openai_api_key: document.getElementById('openaiApiKey').value || null,
+        openai_base_url: document.getElementById('openaiBaseUrl').value || null,
+        openai_model: document.getElementById('openaiModel').value || null,
+        news_api_key: document.getElementById('newsApiKey').value || null
+      };
+      const btn = document.getElementById('saveBtn');
+      const statusEl = document.getElementById('status');
+      btn.disabled = true;
+      statusEl.textContent = '保存中...';
+      statusEl.className = 'status';
+      try {
+        const res = await fetch('/api/admin/config', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Token': token
+          },
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(()=>({detail:'未知错误'}));
+          statusEl.textContent = '保存失败：' + (err.detail || res.status);
+          statusEl.className = 'status err';
+        } else {
+          statusEl.textContent = '保存成功，新的配置已生效';
+          statusEl.className = 'status ok';
+        }
+      } catch (e) {
+        statusEl.textContent = '保存失败：网络异常';
+        statusEl.className = 'status err';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.getElementById('adminToken').addEventListener('blur', loadConfig);
+  </script>
+</body>
+</html>
+"""
+
+
+@app.get("/admin", response_class=HTMLResponse)
+async def admin_page(request: Request):
+    return HTMLResponse(content=ADMIN_HTML)
