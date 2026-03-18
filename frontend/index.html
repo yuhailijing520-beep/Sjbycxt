@@ -53,20 +53,7 @@
   .nav { display: flex; gap: 24px; }
   .nav a { color: rgba(245,245,240,0.6); text-decoration: none; font-size: 13px; letter-spacing: 1px; transition: color 0.2s; }
   .nav a:hover, .nav a.active { color: var(--gold); }
-  .unlock-btn {
-    background: linear-gradient(135deg, var(--gold), #a07c20);
-    color: #050e07;
-    border: none;
-    padding: 8px 20px;
-    border-radius: 20px;
-    font-family: 'Noto Sans SC', sans-serif;
-    font-weight: 700;
-    font-size: 13px;
-    cursor: pointer;
-    transition: transform 0.15s, box-shadow 0.15s;
-    display: none;
-  }
-  .unlock-btn:hover { transform: scale(1.04); box-shadow: 0 4px 20px rgba(212,175,55,0.4); }
+  /* 解锁广告逻辑已移除 */
 
   /* Hero */
   .hero {
@@ -312,12 +299,11 @@
 <header class="header">
   <div class="logo">WORLD<span>CUP</span> ORACLE</div>
   <nav class="nav">
-    <a href="#" class="active">赛程预测</a>
-    <a href="#">历史数据</a>
-    <a href="#">球队分析</a>
-    <a href="#">排行榜</a>
+    <a href="#schedule" class="active">赛程预测</a>
+    <a href="#history">历史数据</a>
+    <a href="#teams">球队分析</a>
+    <a href="#leaderboard">排行榜</a>
   </nav>
-  <button class="unlock-btn">🏆 解锁全部预测</button>
 </header>
 
 <section class="hero">
@@ -347,7 +333,7 @@
   </div>
 </section>
 
-<section class="section">
+<section class="section" id="schedule">
   <div class="section-header">
     <div class="section-title">2026 世界杯 · 赛程预测 <span class="tag tag-new">即将开赛</span></div>
     <div class="filter-tabs">
@@ -362,6 +348,52 @@
   </div>
 </section>
 
+<section class="section" id="history">
+  <div class="section-header">
+    <div class="section-title">历史数据 <span class="tag">1930–2022</span></div>
+  </div>
+  <div class="card" style="padding:18px 22px;margin-bottom:14px">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+      <div style="font-size:13px;opacity:.75">历届冠军、东道主、总进球等统计汇总</div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <label style="font-size:12px;opacity:.7">年份</label>
+        <select id="history-year" style="width:140px"></select>
+      </div>
+    </div>
+  </div>
+  <div class="stat-grid" id="history-stats"></div>
+</section>
+
+<section class="section" id="teams">
+  <div class="section-header">
+    <div class="section-title">球队分析 <span class="tag">对比</span></div>
+  </div>
+  <div class="card" style="padding:18px 22px;margin-bottom:14px">
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+      <div style="font-size:13px;opacity:.75">基于历史夺冠/参赛次数/胜率/场均进球等指标的球队画像</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:12px;opacity:.7">球队 A</label>
+        <select id="team-a" style="width:180px"></select>
+        <label style="font-size:12px;opacity:.7">球队 B</label>
+        <select id="team-b" style="width:180px"></select>
+      </div>
+    </div>
+  </div>
+  <div class="card" style="padding:18px 22px">
+    <div id="team-compare"></div>
+  </div>
+</section>
+
+<section class="section" id="leaderboard">
+  <div class="section-header">
+    <div class="section-title">排行榜 <span class="tag">Top</span></div>
+  </div>
+  <div class="card" style="padding:18px 22px;margin-bottom:14px">
+    <div style="font-size:13px;opacity:.75">按“综合实力分”排序（夺冠数权重更高，其次胜率与场均进球）</div>
+  </div>
+  <div class="matches-grid" id="leaderboard-list"></div>
+</section>
+
 <!-- AI Analysis Modal -->
 <div class="modal-overlay" id="analysis-modal">
   <div class="modal">
@@ -370,7 +402,8 @@
   </div>
 </div>
 
-<script>
+<script type="module">
+import { WORLD_CUP_HISTORY, TEAM_STATS } from './src/data/worldcup_history.js';
 const MATCHES = [
   { id:1, teamA:'🇧🇷', nameA:'巴西', rankA:1, teamB:'🇦🇷', nameB:'阿根廷', rankB:2, time:'2026-06-16 03:00', stage:'小组赛 A 组', locked:false,
     winA:55, draw:22, winB:23, prediction:'巴西', confidence:68,
@@ -388,8 +421,6 @@ const MATCHES = [
     winA:42, draw:30, winB:28, prediction:'平局', confidence:51 },
 ];
 
-let unlocked = false;
-
 function renderMatches(filter='all') {
   const grid = document.getElementById('matches-grid');
   const filtered = filter === 'all' ? MATCHES :
@@ -397,9 +428,8 @@ function renderMatches(filter='all') {
     MATCHES.filter(m=>!m.stage.includes('小组'));
 
   grid.innerHTML = filtered.map(m => {
-    const isLocked = m.locked && !unlocked;
     return `
-    <div class="match-card ${isLocked?'locked':''}" onclick="${isLocked?'showAdModal()':'openAnalysis('+m.id+')'}">
+    <div class="match-card" onclick="openAnalysis(${m.id})">
       <div class="team">
         <div class="team-flag">${m.teamA}</div>
         <div><div class="team-name">${m.nameA}</div><div class="team-rank">FIFA #${m.rankA}</div></div>
@@ -414,28 +444,24 @@ function renderMatches(filter='all') {
         <div style="text-align:right"><div class="team-name">${m.nameB}</div><div class="team-rank">FIFA #${m.rankB}</div></div>
       </div>
       <div class="prediction-panel">
-        ${isLocked ? `
-          <button class="predict-btn locked-btn">🔒 观看广告解锁</button>
-        ` : `
-          <div class="win-bars">
-            <div class="bar-row">
-              <div class="bar-label" style="font-size:10px">${m.nameA.slice(0,4)}</div>
-              <div class="bar-track"><div class="bar-fill win" style="width:${m.winA}%"></div></div>
-              <div class="bar-pct">${m.winA}%</div>
-            </div>
-            <div class="bar-row">
-              <div class="bar-label" style="font-size:10px">平局</div>
-              <div class="bar-track"><div class="bar-fill draw" style="width:${m.draw}%"></div></div>
-              <div class="bar-pct">${m.draw}%</div>
-            </div>
-            <div class="bar-row">
-              <div class="bar-label" style="font-size:10px">${m.nameB.slice(0,4)}</div>
-              <div class="bar-track"><div class="bar-fill lose" style="width:${m.winB}%"></div></div>
-              <div class="bar-pct">${m.winB}%</div>
-            </div>
+        <div class="win-bars">
+          <div class="bar-row">
+            <div class="bar-label" style="font-size:10px">${m.nameA.slice(0,4)}</div>
+            <div class="bar-track"><div class="bar-fill win" style="width:${m.winA}%"></div></div>
+            <div class="bar-pct">${m.winA}%</div>
           </div>
-          <button class="predict-btn" style="margin-top:8px;font-size:12px">🤖 AI深度分析 →</button>
-        `}
+          <div class="bar-row">
+            <div class="bar-label" style="font-size:10px">平局</div>
+            <div class="bar-track"><div class="bar-fill draw" style="width:${m.draw}%"></div></div>
+            <div class="bar-pct">${m.draw}%</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label" style="font-size:10px">${m.nameB.slice(0,4)}</div>
+            <div class="bar-track"><div class="bar-fill lose" style="width:${m.winB}%"></div></div>
+            <div class="bar-pct">${m.winB}%</div>
+          </div>
+        </div>
+        <button class="predict-btn" style="margin-top:8px;font-size:12px">🤖 AI深度分析 →</button>
       </div>
     </div>`;
   }).join('');
@@ -508,37 +534,148 @@ function closeModal(id) {
   document.getElementById(id).classList.remove('active');
 }
 
-let adTimer = null;
-function showAdModal() {
-  const modal = document.getElementById('ad-modal');
-  modal.classList.add('active');
-  const btn = document.getElementById('watch-btn');
-  const countEl = document.getElementById('ad-count');
-  btn.disabled = true;
-  let count = 5;
-  countEl.textContent = count;
-  adTimer = setInterval(()=>{
-    count--;
-    countEl.textContent = count;
-    document.getElementById('ad-progress').style.setProperty('--p', ((5-count)/5*360)+'deg');
-    if(count <= 0) {
-      clearInterval(adTimer);
-      btn.disabled = false;
-      btn.textContent = '✅ 立即解锁全部预测';
-    }
-  }, 1000);
+function renderHistory() {
+  const yearSel = document.getElementById('history-year');
+  const statsEl = document.getElementById('history-stats');
+  const years = WORLD_CUP_HISTORY.map(x => x.year).sort((a,b)=>b-a);
+  yearSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join('');
+  const renderYear = (year) => {
+    const row = WORLD_CUP_HISTORY.find(x => x.year === year);
+    if (!row) return;
+    statsEl.innerHTML = `
+      <div class="stat-item"><div class="stat-name">东道主</div><div class="stat-value">${row.host}</div></div>
+      <div class="stat-item"><div class="stat-name">冠军</div><div class="stat-value" style="color:var(--gold)">${row.champion}</div></div>
+      <div class="stat-item"><div class="stat-name">亚军</div><div class="stat-value">${row.runnerUp}</div></div>
+      <div class="stat-item"><div class="stat-name">季军</div><div class="stat-value">${row.thirdPlace}</div></div>
+      <div class="stat-item"><div class="stat-name">比赛场次</div><div class="stat-value">${row.matches}</div></div>
+      <div class="stat-item"><div class="stat-name">总进球</div><div class="stat-value">${row.goals}</div></div>
+    `;
+  };
+  yearSel.addEventListener('change', () => renderYear(Number(yearSel.value)));
+  renderYear(years[0]);
 }
 
-function watchAd() {
-  unlocked = true;
-  closeModal('ad-modal');
-  renderMatches();
-  document.querySelector('.unlock-btn').textContent = '✅ 已解锁';
-  document.querySelector('.unlock-btn').style.background = 'linear-gradient(135deg,#2ecc71,#1a9e53)';
+function renderTeamAnalysis() {
+  const teams = Object.entries(TEAM_STATS).map(([name, s]) => ({ name, ...s }));
+  const aSel = document.getElementById('team-a');
+  const bSel = document.getElementById('team-b');
+  const compareEl = document.getElementById('team-compare');
+
+  const optionHtml = teams
+    .sort((x,y)=> (y.titles - x.titles) || (y.winRate - x.winRate))
+    .map(t => `<option value="${t.name}">${t.flag || ''} ${t.name}</option>`)
+    .join('');
+  aSel.innerHTML = optionHtml;
+  bSel.innerHTML = optionHtml;
+  aSel.value = teams.find(t=>t.name==='Brazil')?.name || teams[0]?.name;
+  bSel.value = teams.find(t=>t.name==='Argentina')?.name || teams[1]?.name || teams[0]?.name;
+
+  const render = () => {
+    const a = TEAM_STATS[aSel.value];
+    const b = TEAM_STATS[bSel.value];
+    if (!a || !b) return;
+    const row = (label, av, bv, fmt=(x)=>x) => `
+      <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06)">
+        <div style="text-align:left"><div style="font-weight:650">${fmt(av)}</div><div style="font-size:12px;opacity:.6">${aSel.value}</div></div>
+        <div style="font-size:12px;opacity:.65">${label}</div>
+        <div style="text-align:right"><div style="font-weight:650">${fmt(bv)}</div><div style="font-size:12px;opacity:.6">${bSel.value}</div></div>
+      </div>`;
+    compareEl.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:22px;letter-spacing:1px">
+          <span style="color:${a.color}">${a.flag||''} ${aSel.value}</span> VS
+          <span style="color:${b.color}">${b.flag||''} ${bSel.value}</span>
+        </div>
+        <div style="font-size:12px;opacity:.65">胜率与进球为历史综合指标</div>
+      </div>
+      ${row('夺冠次数', a.titles, b.titles)}
+      ${row('世界杯参赛', a.appearances, b.appearances)}
+      ${row('决赛次数', a.finals, b.finals)}
+      ${row('胜率', a.winRate, b.winRate, (x)=>Math.round(x*100)+'%')}
+      ${row('场均进球', a.avgGoals, b.avgGoals, (x)=>x.toFixed(1))}
+    `;
+  };
+  aSel.addEventListener('change', render);
+  bSel.addEventListener('change', render);
+  render();
+}
+
+function renderLeaderboard() {
+  const listEl = document.getElementById('leaderboard-list');
+  const items = Object.entries(TEAM_STATS).map(([name, s]) => {
+    const score = (s.titles || 0) * 100 + (s.winRate || 0) * 50 + (s.avgGoals || 0) * 10;
+    return { name, ...s, score };
+  }).sort((a,b)=> b.score - a.score);
+
+  listEl.innerHTML = items.slice(0, 12).map((t, idx) => `
+    <div class="match-card" style="cursor:default">
+      <div class="team">
+        <div class="team-flag">${t.flag || '🏳️'}</div>
+        <div>
+          <div class="team-name">#${idx+1} ${t.name}</div>
+          <div class="team-rank">综合分 ${t.score.toFixed(1)}</div>
+        </div>
+      </div>
+      <div class="match-center">
+        <div class="match-time">夺冠 ${t.titles} · 决赛 ${t.finals}</div>
+        <div class="vs-badge">—</div>
+        <div class="match-stage">参赛 ${t.appearances}</div>
+      </div>
+      <div class="team right">
+        <div style="text-align:right">
+          <div class="team-name" style="color:${t.color}">胜率 ${(t.winRate*100).toFixed(0)}%</div>
+          <div class="team-rank">场均进球 ${t.avgGoals.toFixed(1)}</div>
+        </div>
+      </div>
+      <div class="prediction-panel">
+        <div class="win-bars">
+          <div class="bar-row">
+            <div class="bar-label" style="font-size:10px">胜率</div>
+            <div class="bar-track"><div class="bar-fill win" style="width:${Math.min(100, t.winRate*100)}%"></div></div>
+            <div class="bar-pct">${(t.winRate*100).toFixed(0)}%</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label" style="font-size:10px">进球</div>
+            <div class="bar-track"><div class="bar-fill draw" style="width:${Math.min(100, (t.avgGoals/2.5)*100)}%"></div></div>
+            <div class="bar-pct">${t.avgGoals.toFixed(1)}</div>
+          </div>
+          <div class="bar-row">
+            <div class="bar-label" style="font-size:10px">冠军</div>
+            <div class="bar-track"><div class="bar-fill lose" style="width:${Math.min(100, (t.titles/5)*100)}%"></div></div>
+            <div class="bar-pct">${t.titles}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function setupNavActive() {
+  const links = Array.from(document.querySelectorAll('.nav a'));
+  const sections = links
+    .map(a => document.querySelector(a.getAttribute('href')))
+    .filter(Boolean);
+  const setActive = () => {
+    const y = window.scrollY + 120;
+    let activeId = sections[0]?.id;
+    for (const s of sections) {
+      if (s.offsetTop <= y) activeId = s.id;
+    }
+    links.forEach(a => {
+      const id = a.getAttribute('href').slice(1);
+      a.classList.toggle('active', id === activeId);
+    });
+  };
+  window.addEventListener('scroll', setActive, { passive: true });
+  setActive();
 }
 
 // Init
 renderMatches();
+renderHistory();
+renderTeamAnalysis();
+renderLeaderboard();
+setupNavActive();
 </script>
 </body>
 </html>

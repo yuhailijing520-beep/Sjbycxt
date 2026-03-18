@@ -15,14 +15,24 @@ import hashlib
 import asyncio
 from datetime import datetime, timedelta
 
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development").strip().lower()  # development | production
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 CONFIG_PATH = os.getenv("MODEL_CONFIG_PATH", "model_config.json")
 
 app = FastAPI(title="WorldCup Oracle API", version="1.0.0")
 
+if ENVIRONMENT == "production" and ADMIN_PASSWORD == "admin123":
+    raise RuntimeError("生产环境禁止使用默认 ADMIN_PASSWORD，请通过环境变量设置强口令")
+
+cors_origins_raw = os.getenv("CORS_ORIGINS", "*").strip()
+if cors_origins_raw == "*":
+    cors_origins = ["*"]
+else:
+    cors_origins = [o.strip() for o in cors_origins_raw.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境改为具体域名
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -196,7 +206,21 @@ async def get_history(team_a: str, team_b: str):
 
 @app.post("/api/predict", response_model=PredictionResponse)
 async def predict(req: PredictionRequest):
-    cache_key = f"pred:{hashlib.md5(f'{req.team_a}:{req.team_b}'.encode()).hexdigest()}"
+    # 缓存 key 需要包含影响结果的关键维度，避免不同条件误命中同一缓存
+    provider = (CURRENT_CONFIG.ai_provider or AI_PROVIDER).strip().lower()
+    cache_payload = {
+        "team_a": req.team_a,
+        "team_b": req.team_b,
+        "match_date": req.match_date,
+        "include_news": req.include_news,
+        "provider": provider,
+        "gemini_model": CURRENT_CONFIG.gemini_model,
+        "openai_model": CURRENT_CONFIG.openai_model,
+        "openai_base_url": CURRENT_CONFIG.openai_base_url,
+    }
+    cache_key = "pred:" + hashlib.md5(
+        json.dumps(cache_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()
 
     # 缓存检查（1小时缓存）
     if r:
@@ -208,8 +232,7 @@ async def predict(req: PredictionRequest):
     news = await fetch_news(req.team_a, req.team_b) if req.include_news else []
 
     try:
-        provider = CURRENT_CONFIG.ai_provider
-        if AI_PROVIDER == "openai":
+        if provider == "openai":
             ai_result = await predict_with_openai(req.team_a, req.team_b, history, news)
         else:
             ai_result = await predict_with_gemini(req.team_a, req.team_b, history, news)
